@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/StockReplenishment.Contracts/StockReplenishment.Contracts.csproj" />
+    <Project Path="src/StockReplenishment.Api/StockReplenishment.Api.csproj" />
   </Folder>
 </Solution>
