@@ -1,0 +1,34 @@
+@switch (Status)
+{
+    case StockCheckStatus.Pending:
+        <MudTooltip Text="Checking availability with the warehouse system...">
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Info" />
+        </MudTooltip>
+        break;
+    case StockCheckStatus.Completed when AllItemsAvailable == true:
+        <MudTooltip Text="All items available">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" />
+        </MudTooltip>
+        break;
+    case StockCheckStatus.Completed:
+        <MudTooltip Text="Some items have insufficient stock">
+            <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" />
+        </MudTooltip>
+        break;
+    case StockCheckStatus.Failed:
+        <MudTooltip Text="Stock check failed - can be retried">
+            <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Error" />
+        </MudTooltip>
+        break;
+    default:
+        <MudText Typo="Typo.body2">-</MudText>
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public StockCheckStatus Status { get; set; }
+
+    [Parameter]
+    public bool? AllItemsAvailable { get; set; }
+}

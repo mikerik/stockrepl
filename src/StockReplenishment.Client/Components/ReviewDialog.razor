@@ -1,0 +1,40 @@
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_comment"
+                      Label="@Label"
+                      Required="@RequireComment"
+                      RequiredError="@($"{Label} is required.")"
+                      Lines="3"
+                      MaxLength="@ValidationLimits.CommentMaxLength"
+                      Counter="@ValidationLimits.CommentMaxLength"
+                      Immediate="true"
+                      AutoFocus="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancel</MudButton>
+        <MudButton Color="@ConfirmColor" Variant="Variant.Filled" Disabled="@(RequireComment && string.IsNullOrWhiteSpace(_comment))" OnClick="Confirm">
+            @ConfirmText
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private string? _comment;
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public string Label { get; set; } = "Comment";
+
+    [Parameter]
+    public bool RequireComment { get; set; }
+
+    [Parameter]
+    public string ConfirmText { get; set; } = "OK";
+
+    [Parameter]
+    public Color ConfirmColor { get; set; } = Color.Primary;
+
+    private void Confirm() => MudDialog.Close(DialogResult.Ok(_comment?.Trim()));
+}

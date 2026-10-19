@@ -1,0 +1,16 @@
+<MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@ColorFor(Priority)"
+         Icon="@(Priority == RequestPriority.Urgent ? Icons.Material.Filled.PriorityHigh : null)">
+    @Priority
+</MudChip>
+
+@code {
+    [Parameter, EditorRequired]
+    public RequestPriority Priority { get; set; }
+
+    private static Color ColorFor(RequestPriority priority) => priority switch
+    {
+        RequestPriority.Urgent => Color.Error,
+        RequestPriority.Normal => Color.Info,
+        _ => Color.Default,
+    };
+}

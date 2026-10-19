@@ -1,0 +1,230 @@
+@page "/requests/new"
+@page "/requests/{Id:int}/edit"
+@inherits ApiComponentBase
+
+<PageTitle>@(IsNew ? "New request" : $"Edit {_requestNumber}")</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="@BackUrl" aria-label="Back" />
+    <MudText Typo="Typo.h4">@(IsNew ? "New replenishment request" : $"Edit {_requestNumber}")</MudText>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_notEditableReason is not null)
+{
+    <MudAlert Severity="Severity.Warning">@_notEditableReason</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="6">
+                <MudSelect T="int" Label="Stock location" @bind-Value="_input.LocationId" Required="true" Variant="Variant.Outlined"
+                           ToStringFunc="@LocationName">
+                    @foreach (var location in _locations)
+                    {
+                        <MudSelectItem T="int" Value="@location.Id">@location.Code - @location.Name (@location.Area)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="RequestPriority" Label="Priority" @bind-Value="_input.Priority" Variant="Variant.Outlined">
+                    @foreach (var priority in Enum.GetValues<RequestPriority>())
+                    {
+                        <MudSelectItem T="RequestPriority" Value="@priority">@priority</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" Label="Notes" @bind-Value="_input.Notes" Lines="2" Variant="Variant.Outlined"
+                              MaxLength="@ValidationLimits.NotesMaxLength" Counter="@ValidationLimits.NotesMaxLength" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+            <MudText Typo="Typo.h6">Materials</MudText>
+            <MudSpacer />
+            <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddLine"
+                       Disabled="@(_lines.Count >= ValidationLimits.MaxLinesPerRequest)">Add line</MudButton>
+        </MudStack>
+
+        @foreach (var line in _lines)
+        {
+            <MudGrid Spacing="2" Class="mb-1" @key="line">
+                <MudItem xs="12" md="8">
+                    <MudAutocomplete T="MaterialDto" Label="Article" @bind-Value="line.Material" SearchFunc="SearchMaterialsAsync"
+                                     ToStringFunc="@(m => m is null ? string.Empty : $"{m.ArticleNumber} - {m.Description}")"
+                                     ResetValueOnEmptyText="true" MinCharacters="0" DebounceInterval="250"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="Type article number or description" />
+                </MudItem>
+                <MudItem xs="9" md="3">
+                    <MudNumericField T="decimal" Label="Quantity" @bind-Value="line.Quantity" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                     Adornment="Adornment.End" AdornmentText="@(line.Material?.UnitOfMeasure ?? string.Empty)" />
+                </MudItem>
+                <MudItem xs="3" md="1" Class="d-flex align-center">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => _lines.Remove(line))"
+                                   Disabled="@(_lines.Count == 1)" aria-label="Remove line" />
+                </MudItem>
+            </MudGrid>
+        }
+    </MudPaper>
+
+    @if (_validationErrors.Count > 0)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">
+            @foreach (var error in _validationErrors)
+            {
+                <div>@error</div>
+            }
+        </MudAlert>
+    }
+
+    <MudStack Row="true" Justify="Justify.FlexEnd">
+        <MudButton Variant="Variant.Text" Href="@BackUrl" Disabled="IsBusy">Cancel</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="@(() => SaveAsync(submit: false))" Disabled="IsBusy"
+                   StartIcon="@Icons.Material.Filled.Save">Save draft</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => SaveAsync(submit: true))" Disabled="IsBusy"
+                   StartIcon="@Icons.Material.Filled.Send">Save and submit</MudButton>
+    </MudStack>
+}
+
+@code {
+    private readonly SaveRequestInput _input = new();
+    private List<LineModel> _lines = [new()];
+    private List<LocationDto> _locations = [];
+    private List<string> _validationErrors = [];
+    private string? _requestNumber;
+    private string? _notEditableReason;
+    private bool _loading = true;
+
+    [Parameter]
+    public int? Id { get; set; }
+
+    private bool IsNew => Id is null;
+
+    // Must never be empty: MudBlazor only renders a button as a link when Href is non-empty.
+    private string BackUrl => IsNew ? "/" : $"requests/{Id}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await TryRunAsync(async () =>
+        {
+            _locations = await Api.GetLocationsAsync();
+            if (Id is { } id)
+            {
+                var request = await Api.GetRequestAsync(id);
+                _requestNumber = request.RequestNumber;
+                if (request.Status != RequestStatus.Draft)
+                {
+                    _notEditableReason = $"{request.RequestNumber} is {request.Status} and can no longer be edited.";
+                }
+
+                _input.LocationId = request.LocationId;
+                _input.Priority = request.Priority;
+                _input.Notes = request.Notes;
+                _lines = request.Lines
+                    .Select(l => new LineModel
+                    {
+                        Material = new MaterialDto(l.MaterialId, l.ArticleNumber, l.Description, l.UnitOfMeasure),
+                        Quantity = l.RequestedQuantity,
+                    })
+                    .ToList();
+            }
+        });
+        _loading = false;
+    }
+
+    private async Task<IEnumerable<MaterialDto>> SearchMaterialsAsync(string? text, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await Api.SearchMaterialsAsync(text, cancellationToken);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException or OperationCanceledException)
+        {
+            return [];
+        }
+    }
+
+    private void AddLine() => _lines.Add(new LineModel());
+
+    private string LocationName(int id) =>
+        _locations.FirstOrDefault(l => l.Id == id) is { } location ? $"{location.Code} - {location.Name}" : string.Empty;
+
+    private async Task SaveAsync(bool submit)
+    {
+        _validationErrors = Validate();
+        if (_validationErrors.Count > 0)
+        {
+            return;
+        }
+
+        _input.Lines = _lines
+            .Select(l => new RequestLineInput { ArticleNumber = l.Material!.ArticleNumber, RequestedQuantity = l.Quantity })
+            .ToList();
+
+        ReplenishmentRequestDto? saved = null;
+        var succeeded = await TryRunAsync(async () =>
+        {
+            saved = Id is { } id ? await Api.UpdateRequestAsync(id, _input) : await Api.CreateRequestAsync(_input);
+            if (submit)
+            {
+                saved = await Api.SubmitRequestAsync(saved.Id);
+            }
+        }, submit ? "Request submitted - stock availability is being checked." : "Draft saved.");
+
+        // If creation succeeded but submission failed, the draft still exists, so continue from its page.
+        if (saved is not null)
+        {
+            Navigation.NavigateTo($"requests/{saved.Id}");
+        }
+        else if (!succeeded)
+        {
+            StateHasChanged();
+        }
+    }
+
+    private List<string> Validate()
+    {
+        var errors = new List<string>();
+        if (_input.LocationId <= 0)
+        {
+            errors.Add("Select a stock location.");
+        }
+
+        if (_lines.Any(l => l.Material is null))
+        {
+            errors.Add("Select an article on every line (or remove empty lines).");
+        }
+
+        if (_lines.Any(l => l.Quantity <= 0))
+        {
+            errors.Add("Every line needs a quantity greater than zero.");
+        }
+
+        var duplicates = _lines
+            .Where(l => l.Material is not null)
+            .GroupBy(l => l.Material!.ArticleNumber)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        if (duplicates.Count > 0)
+        {
+            errors.Add($"Each article may only appear once ({string.Join(", ", duplicates)}).");
+        }
+
+        return errors;
+    }
+
+    private sealed class LineModel
+    {
+        public MaterialDto? Material { get; set; }
+
+        public decimal Quantity { get; set; } = 1;
+    }
+}

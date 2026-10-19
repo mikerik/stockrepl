@@ -1,0 +1,314 @@
+@page "/requests/{Id:int}"
+@inherits ApiComponentBase
+@implements IDisposable
+@inject RequestUpdatesListener Updates
+@inject IDialogService DialogService
+@inject UserSession Session
+
+<PageTitle>@(_request?.RequestNumber ?? "Request")</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/" aria-label="Back to list" />
+    <MudText Typo="Typo.h4">@(_request?.RequestNumber ?? $"Request {Id}")</MudText>
+    @if (_request is not null)
+    {
+        <StatusChip Status="_request.Status" />
+        <PriorityChip Priority="_request.Priority" />
+    }
+    <MudSpacer />
+    <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync" Disabled="IsBusy" aria-label="Refresh" />
+</MudStack>
+
+@if (_loadError is not null)
+{
+    <MudAlert Severity="Severity.Error">@_loadError</MudAlert>
+}
+else if (_request is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="8">
+            @* Stock check result *@
+            @switch (_request.StockCheckStatus)
+            {
+                case StockCheckStatus.Pending:
+                    <MudAlert Severity="Severity.Info" Class="mb-4" Icon="@Icons.Material.Filled.HourglassTop">
+                        <MudText Typo="Typo.body1"><b>Checking stock availability with the warehouse system...</b></MudText>
+                        <MudText Typo="Typo.body2">This can take a few seconds. You can keep working - the result appears here automatically.</MudText>
+                        <MudProgressLinear Indeterminate="true" Color="Color.Info" Class="mt-2" />
+                    </MudAlert>
+                    break;
+                case StockCheckStatus.Completed:
+                    <MudAlert Severity="@(_request.AllItemsAvailable == true ? Severity.Success : Severity.Warning)" Class="mb-4">
+                        <b>Stock check completed:</b> @_request.StockCheckMessage
+                        <MudText Typo="Typo.caption" Class="d-block">Checked @FormatTime(_request.StockCheckCompletedAt)</MudText>
+                    </MudAlert>
+                    break;
+                case StockCheckStatus.Failed:
+                    <MudAlert Severity="Severity.Error" Class="mb-4">
+                        <b>Stock check failed:</b> @_request.StockCheckMessage
+                        @if (_request.Status == RequestStatus.Submitted)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" Class="ml-2" Disabled="IsBusy"
+                                       StartIcon="@Icons.Material.Filled.Replay" OnClick="RetryStockCheckAsync">Retry check</MudButton>
+                        }
+                    </MudAlert>
+                    break;
+            }
+
+            @if (_request.Status == RequestStatus.Rejected)
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Class="mb-4">
+                    <b>Rejected by @_request.ReviewedBy:</b> @_request.RejectionReason
+                </MudAlert>
+            }
+
+            <MudPaper Class="pa-4 mb-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-2">Materials</MudText>
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead>
+                        <tr>
+                            <th>Article</th>
+                            <th>Description</th>
+                            <th style="text-align:right">Requested</th>
+                            <th style="text-align:right">Available</th>
+                            <th style="text-align:right">Fulfilled</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var line in _request.Lines)
+                        {
+                            <tr>
+                                <td>@line.ArticleNumber</td>
+                                <td>@line.Description</td>
+                                <td style="text-align:right">@FormatQuantity(line.RequestedQuantity, line.UnitOfMeasure)</td>
+                                <td style="text-align:right">
+                                    @if (line.AvailableQuantity is { } available)
+                                    {
+                                        <MudText Typo="Typo.body2" Color="@(line.IsAvailable == true ? Color.Success : Color.Warning)">
+                                            @FormatQuantity(available, line.UnitOfMeasure)
+                                            @(line.IsAvailable == true ? string.Empty : " (short)")
+                                        </MudText>
+                                    }
+                                    else if (_request.StockCheckStatus == StockCheckStatus.Pending)
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                    }
+                                    else
+                                    {
+                                        <span>-</span>
+                                    }
+                                </td>
+                                <td style="text-align:right">@(line.FulfilledQuantity is { } fulfilled ? FormatQuantity(fulfilled, line.UnitOfMeasure) : "-")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+
+            <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+                @switch (_request.Status)
+                {
+                    case RequestStatus.Draft:
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Send" Disabled="IsBusy" OnClick="SubmitAsync">Submit for approval</MudButton>
+                        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" Disabled="IsBusy" Href="@($"requests/{Id}/edit")">Edit</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" Disabled="IsBusy" OnClick="DeleteAsync">Delete</MudButton>
+                        break;
+                    case RequestStatus.Submitted:
+                        <MudTooltip Text="@ApproveHint">
+                            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check"
+                                       Disabled="@(IsBusy || _request.StockCheckStatus != StockCheckStatus.Completed)" OnClick="ApproveAsync">Approve</MudButton>
+                        </MudTooltip>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Close" Disabled="IsBusy" OnClick="RejectAsync">Reject</MudButton>
+                        break;
+                    case RequestStatus.Approved:
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.LocalShipping" Disabled="IsBusy" OnClick="FulfillAsync">Mark as fulfilled</MudButton>
+                        break;
+                }
+            </MudStack>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4 mb-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-2">Details</MudText>
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        <tr><td>Location</td><td>@_request.LocationCode - @_request.LocationName</td></tr>
+                        <tr><td>Requested by</td><td>@_request.RequestedBy</td></tr>
+                        <tr><td>Created</td><td>@FormatTime(_request.CreatedAt)</td></tr>
+                        <tr><td>Submitted</td><td>@FormatTime(_request.SubmittedAt)</td></tr>
+                        @if (_request.ReviewedBy is not null)
+                        {
+                            <tr><td>Reviewed</td><td>@_request.ReviewedBy, @FormatTime(_request.ReviewedAt)</td></tr>
+                        }
+                        @if (_request.FulfilledBy is not null)
+                        {
+                            <tr><td>Fulfilled</td><td>@_request.FulfilledBy, @FormatTime(_request.FulfilledAt)</td></tr>
+                        }
+                        @if (_request.Notes is not null)
+                        {
+                            <tr><td>Notes</td><td>@_request.Notes</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-2">History</MudText>
+                <MudTimeline TimelinePosition="TimelinePosition.Start" Class="pt-0">
+                    @foreach (var change in _request.History.Reverse())
+                    {
+                        <MudTimelineItem Size="Size.Small" Color="Color.Primary">
+                            <MudText Typo="Typo.body2"><b>@change.ToStatus</b> by @change.ChangedBy</MudText>
+                            <MudText Typo="Typo.caption">@FormatTime(change.ChangedAt)</MudText>
+                            @if (change.Comment is not null)
+                            {
+                                <MudText Typo="Typo.body2"><i>"@change.Comment"</i></MudText>
+                            }
+                        </MudTimelineItem>
+                    }
+                </MudTimeline>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private ReplenishmentRequestDto? _request;
+    private string? _loadError;
+
+    [Parameter]
+    public int Id { get; set; }
+
+    private string ApproveHint => _request?.StockCheckStatus switch
+    {
+        StockCheckStatus.Pending => "Waiting for the stock check to finish",
+        StockCheckStatus.Failed => "Retry the stock check before approving",
+        _ when string.Equals(_request?.RequestedBy, Session.CurrentUser.Name, StringComparison.OrdinalIgnoreCase)
+            => "You cannot approve your own request - switch user in the top bar",
+        _ => "Approve this request",
+    };
+
+    protected override void OnInitialized()
+    {
+        Updates.RequestUpdated += OnRequestUpdated;
+        Updates.Reconnected += OnReconnected;
+    }
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _request = await Api.GetRequestAsync(Id);
+            _loadError = null;
+        }
+        catch (ApiException ex)
+        {
+            _loadError = ex.DisplayMessage;
+        }
+        catch (HttpRequestException)
+        {
+            _loadError = "Could not reach the server.";
+        }
+    }
+
+    private void OnRequestUpdated(RequestUpdatedNotification notification)
+    {
+        if (notification.RequestId != Id)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            var previousCheck = _request?.StockCheckStatus;
+            await LoadAsync();
+            if (previousCheck == StockCheckStatus.Pending && _request?.StockCheckStatus is StockCheckStatus.Completed or StockCheckStatus.Failed)
+            {
+                Snackbar.Add($"Stock check for {_request?.RequestNumber} finished: {_request?.StockCheckMessage}",
+                    _request?.StockCheckStatus == StockCheckStatus.Failed ? Severity.Error : Severity.Info);
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private void OnReconnected() => _ = InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    private Task SubmitAsync() =>
+        TryRunAsync(async () => _request = await Api.SubmitRequestAsync(Id), "Request submitted - stock availability is being checked.");
+
+    private Task RetryStockCheckAsync() =>
+        TryRunAsync(async () => _request = await Api.RetryStockCheckAsync(Id), "Stock check restarted.");
+
+    private async Task ApproveAsync()
+    {
+        var comment = await ShowReviewDialogAsync("Approve request", "Comment (optional)", requireComment: false, "Approve", Color.Success);
+        if (comment is not null)
+        {
+            await TryRunAsync(async () => _request = await Api.ApproveRequestAsync(Id, comment), "Request approved.");
+        }
+    }
+
+    private async Task RejectAsync()
+    {
+        var reason = await ShowReviewDialogAsync("Reject request", "Rejection reason", requireComment: true, "Reject", Color.Error);
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            await TryRunAsync(async () => _request = await Api.RejectRequestAsync(Id, reason), "Request rejected.");
+        }
+    }
+
+    private async Task FulfillAsync()
+    {
+        var parameters = new DialogParameters<FulfillDialog> { { d => d.Lines, _request!.Lines } };
+        var dialog = await DialogService.ShowAsync<FulfillDialog>("Fulfil request", parameters, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false, Data: FulfillRequestInput input })
+        {
+            await TryRunAsync(async () => _request = await Api.FulfillRequestAsync(Id, input), "Request marked as fulfilled.");
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var confirmed = await DialogService.ShowMessageBox("Delete draft", $"Delete {_request!.RequestNumber}? This cannot be undone.", yesText: "Delete", cancelText: "Cancel");
+        if (confirmed == true && await TryRunAsync(() => Api.DeleteRequestAsync(Id), "Draft deleted."))
+        {
+            Navigation.NavigateTo("");
+        }
+    }
+
+    /// <summary>Returns the entered comment ("" when left empty), or null when the dialog was cancelled.</summary>
+    private async Task<string?> ShowReviewDialogAsync(string title, string label, bool requireComment, string confirmText, Color color)
+    {
+        var parameters = new DialogParameters<ReviewDialog>
+        {
+            { d => d.Label, label },
+            { d => d.RequireComment, requireComment },
+            { d => d.ConfirmText, confirmText },
+            { d => d.ConfirmColor, color },
+        };
+        var dialog = await DialogService.ShowAsync<ReviewDialog>(title, parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        return result is { Canceled: false } ? result.Data as string ?? string.Empty : null;
+    }
+
+    private static string FormatTime(DateTime? value) => value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
+
+    private static string FormatQuantity(decimal quantity, string unit) => $"{quantity:0.###} {unit}";
+
+    public void Dispose()
+    {
+        Updates.RequestUpdated -= OnRequestUpdated;
+        Updates.Reconnected -= OnReconnected;
+    }
+}

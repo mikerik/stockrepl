@@ -1,0 +1,57 @@
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">Enter the quantity actually delivered for each line (0 if nothing could be delivered).</MudText>
+        <MudSimpleTable Dense="true">
+            <thead>
+                <tr>
+                    <th>Article</th>
+                    <th>Description</th>
+                    <th style="text-align:right">Requested</th>
+                    <th style="width:160px">Delivered</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var line in Lines)
+                {
+                    <tr>
+                        <td>@line.ArticleNumber</td>
+                        <td>@line.Description</td>
+                        <td style="text-align:right">@line.RequestedQuantity.ToString("0.###") @line.UnitOfMeasure</td>
+                        <td>
+                            <MudNumericField T="decimal" @bind-Value="_quantities[line.Id]" Min="0" Max="@line.RequestedQuantity"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancel</MudButton>
+        <MudButton Color="Color.Success" Variant="Variant.Filled" Disabled="@(!IsValid)" OnClick="Confirm">Mark fulfilled</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private Dictionary<int, decimal> _quantities = [];
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<RequestLineDto> Lines { get; set; } = [];
+
+    private bool IsValid => Lines.All(l => _quantities[l.Id] >= 0 && _quantities[l.Id] <= l.RequestedQuantity);
+
+    protected override void OnInitialized() =>
+        _quantities = Lines.ToDictionary(l => l.Id, l => Math.Min(l.RequestedQuantity, l.AvailableQuantity ?? l.RequestedQuantity));
+
+    private void Confirm()
+    {
+        var input = new FulfillRequestInput
+        {
+            Lines = _quantities.Select(q => new FulfilledLineInput { LineId = q.Key, FulfilledQuantity = q.Value }).ToList(),
+        };
+        MudDialog.Close(DialogResult.Ok(input));
+    }
+}

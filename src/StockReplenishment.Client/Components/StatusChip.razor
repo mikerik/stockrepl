@@ -1,0 +1,16 @@
+<MudChip T="string" Size="Size.Small" Color="@ColorFor(Status)" Variant="Variant.Filled">@Status</MudChip>
+
+@code {
+    [Parameter, EditorRequired]
+    public RequestStatus Status { get; set; }
+
+    private static Color ColorFor(RequestStatus status) => status switch
+    {
+        RequestStatus.Draft => Color.Default,
+        RequestStatus.Submitted => Color.Info,
+        RequestStatus.Approved => Color.Primary,
+        RequestStatus.Rejected => Color.Error,
+        RequestStatus.Fulfilled => Color.Success,
+        _ => Color.Default,
+    };
+}

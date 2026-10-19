@@ -1,0 +1,152 @@
+@page "/"
+@page "/requests"
+@inherits ApiComponentBase
+@implements IDisposable
+@inject RequestUpdatesListener Updates
+
+<PageTitle>Replenishment requests</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">Replenishment requests</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Href="requests/new">
+        New request
+    </MudButton>
+</MudStack>
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="RequestStatus?" Label="Status" Value="_query.Status" ValueChanged="OnStatusChanged" Clearable="true" Variant="Variant.Outlined" Dense="true">
+                @foreach (var status in Enum.GetValues<RequestStatus>())
+                {
+                    <MudSelectItem T="RequestStatus?" Value="@status">@status</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="RequestPriority?" Label="Priority" Value="_query.Priority" ValueChanged="OnPriorityChanged" Clearable="true" Variant="Variant.Outlined" Dense="true">
+                @foreach (var priority in Enum.GetValues<RequestPriority>())
+                {
+                    <MudSelectItem T="RequestPriority?" Value="@priority">@priority</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="int?" Label="Location" Value="_query.LocationId" ValueChanged="OnLocationChanged" Clearable="true" Variant="Variant.Outlined" Dense="true"
+                       ToStringFunc="@LocationName">
+                @foreach (var location in _locations)
+                {
+                    <MudSelectItem T="int?" Value="@location.Id">@location.Code - @location.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="2">
+            <MudSelect T="RequestSortOrder" Label="Sort" Value="_query.Sort" ValueChanged="OnSortChanged" Variant="Variant.Outlined" Dense="true">
+                <MudSelectItem Value="RequestSortOrder.NewestFirst">Newest first</MudSelectItem>
+                <MudSelectItem Value="RequestSortOrder.OldestFirst">Oldest first</MudSelectItem>
+                <MudSelectItem Value="RequestSortOrder.PriorityThenNewest">Priority</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2">
+            <MudTextField T="string" Label="Search" Value="_query.Search" ValueChanged="OnSearchChanged" DebounceInterval="400"
+                          Placeholder="RR-number, article, user..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudTable @ref="_table" T="ReplenishmentRequestSummaryDto" ServerData="LoadPageAsync" Hover="true" Dense="true" Elevation="1"
+          RowClass="clickable-row" OnRowClick="@(args => Navigation.NavigateTo($"requests/{args.Item!.Id}"))"
+          RowsPerPage="RequestQuery.DefaultPageSize">
+    <HeaderContent>
+        <MudTh>Request</MudTh>
+        <MudTh>Location</MudTh>
+        <MudTh>Priority</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Stock check</MudTh>
+        <MudTh Style="text-align:right">Lines</MudTh>
+        <MudTh>Requested by</MudTh>
+        <MudTh>Created</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Request"><b>@context.RequestNumber</b></MudTd>
+        <MudTd DataLabel="Location">@context.LocationCode<br /><MudText Typo="Typo.caption">@context.LocationName</MudText></MudTd>
+        <MudTd DataLabel="Priority"><PriorityChip Priority="context.Priority" /></MudTd>
+        <MudTd DataLabel="Status"><StatusChip Status="context.Status" /></MudTd>
+        <MudTd DataLabel="Stock check"><StockCheckIndicator Status="context.StockCheckStatus" AllItemsAvailable="context.AllItemsAvailable" /></MudTd>
+        <MudTd DataLabel="Lines" Style="text-align:right">@context.LineCount</MudTd>
+        <MudTd DataLabel="Requested by">@context.RequestedBy</MudTd>
+        <MudTd DataLabel="Created">@context.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No requests match the current filters.</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading...</MudText>
+    </LoadingContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="@(new[] { 10, 20, 50, 100 })" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private readonly RequestQuery _query = new();
+    private List<LocationDto> _locations = [];
+    private MudTable<ReplenishmentRequestSummaryDto>? _table;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Updates.RequestUpdated += OnRequestUpdated;
+        Updates.Reconnected += OnReconnected;
+        await TryRunAsync(async () => _locations = await Api.GetLocationsAsync());
+    }
+
+    private async Task<TableData<ReplenishmentRequestSummaryDto>> LoadPageAsync(TableState state, CancellationToken cancellationToken)
+    {
+        _query.Page = state.Page + 1;
+        _query.PageSize = state.PageSize;
+
+        PagedResult<ReplenishmentRequestSummaryDto>? result = null;
+        await TryRunAsync(async () => result = await Api.SearchRequestsAsync(_query, cancellationToken));
+        return new TableData<ReplenishmentRequestSummaryDto>
+        {
+            Items = result?.Items ?? [],
+            TotalItems = result?.TotalCount ?? 0,
+        };
+    }
+
+    private string LocationName(int? id) =>
+        _locations.FirstOrDefault(l => l.Id == id) is { } location ? $"{location.Code} - {location.Name}" : string.Empty;
+
+    private Task OnStatusChanged(RequestStatus? value) => ApplyFilter(() => _query.Status = value);
+
+    private Task OnPriorityChanged(RequestPriority? value) => ApplyFilter(() => _query.Priority = value);
+
+    private Task OnLocationChanged(int? value) => ApplyFilter(() => _query.LocationId = value);
+
+    private Task OnSortChanged(RequestSortOrder value) => ApplyFilter(() => _query.Sort = value);
+
+    private Task OnSearchChanged(string? value) => ApplyFilter(() => _query.Search = value);
+
+    private Task ApplyFilter(Action update)
+    {
+        update();
+
+        // Changing a filter starts again from the first page.
+        _table?.NavigateTo(0);
+        return _table?.ReloadServerData() ?? Task.CompletedTask;
+    }
+
+    private void OnRequestUpdated(RequestUpdatedNotification notification) => _ = InvokeAsync(ReloadAsync);
+
+    private void OnReconnected() => _ = InvokeAsync(ReloadAsync);
+
+    private Task ReloadAsync() => _table?.ReloadServerData() ?? Task.CompletedTask;
+
+    public void Dispose()
+    {
+        Updates.RequestUpdated -= OnRequestUpdated;
+        Updates.Reconnected -= OnReconnected;
+    }
+}

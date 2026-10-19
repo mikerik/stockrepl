@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\StockReplenishment.Contracts\StockReplenishment.Contracts.csproj" />
+    <ProjectReference Include="..\StockReplenishment.Client\StockReplenishment.Client.csproj" />
   </ItemGroup>
 
   <ItemGroup>

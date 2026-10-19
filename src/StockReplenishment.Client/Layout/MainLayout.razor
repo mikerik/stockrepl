@@ -1,0 +1,47 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject UserSession Session
+@inject RequestUpdatesListener Updates
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider CloseOnEscapeKey="true" />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <MudIcon Icon="@Icons.Material.Filled.Inventory2" Class="mr-3" />
+        <MudLink Href="/" Color="Color.Inherit" Underline="Underline.None" Typo="Typo.h6">Stock Replenishment</MudLink>
+        <MudSpacer />
+        <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+            <ActivatorContent>
+                <MudChip T="string" Icon="@Icons.Material.Filled.Person" Color="Color.Secondary">
+                    @Session.CurrentUser.Name (@Session.CurrentUser.Role)
+                </MudChip>
+            </ActivatorContent>
+            <ChildContent>
+                @foreach (var user in UserSession.Users)
+                {
+                    <MudMenuItem OnClick="@(() => Session.SwitchTo(user))">@user.Name - @user.Role</MudMenuItem>
+                }
+            </ChildContent>
+        </MudMenu>
+    </MudAppBar>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnUserChanged;
+        await Updates.EnsureStartedAsync();
+    }
+
+    private void OnUserChanged() => StateHasChanged();
+
+    public void Dispose() => Session.Changed -= OnUserChanged;
+}
