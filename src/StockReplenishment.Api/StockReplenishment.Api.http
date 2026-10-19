@@ -1,0 +1,48 @@
+@baseUrl = http://localhost:5080
+@user = Anna Lindqvist
+@reviewer = Erik Johansson
+
+### Lookups
+GET {{baseUrl}}/api/locations
+
+###
+GET {{baseUrl}}/api/materials?search=bolt
+
+### List submitted urgent requests, page 1
+GET {{baseUrl}}/api/replenishment-requests?status=Submitted&priority=Urgent&page=1&pageSize=10
+
+### Get one request
+GET {{baseUrl}}/api/replenishment-requests/1
+
+### Create a draft
+POST {{baseUrl}}/api/replenishment-requests
+Content-Type: application/json
+X-User-Name: {{user}}
+
+{
+  "locationId": 1,
+  "priority": "Urgent",
+  "notes": "Line stops in two hours without bolts",
+  "lines": [
+    { "articleNumber": "100-2045", "requestedQuantity": 500 },
+    { "articleNumber": "100-2046", "requestedQuantity": 500 }
+  ]
+}
+
+### Submit (returns 202 Accepted; the stock check runs in the background)
+POST {{baseUrl}}/api/replenishment-requests/31/submit
+X-User-Name: {{user}}
+
+### Approve (only after the stock check has completed, and not by the requester)
+POST {{baseUrl}}/api/replenishment-requests/31/approve
+Content-Type: application/json
+X-User-Name: {{reviewer}}
+
+{ "comment": "Go ahead" }
+
+### Reject
+POST {{baseUrl}}/api/replenishment-requests/31/reject
+Content-Type: application/json
+X-User-Name: {{reviewer}}
+
+{ "reason": "Duplicate request" }
