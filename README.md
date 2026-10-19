@@ -12,13 +12,12 @@ Draft → Submitted → Approved → Fulfilled
 
 Requires the **.NET 10 SDK**. Nothing else: the database is SQLite in-memory and is seeded on startup.
 
+From the repository root:
+
 ```bash
 dotnet build
-dotnet run --project src/StockReplenishment.Api
+dotnet run
 ```
-
-or `cd src/StockReplenishment.Api` and plain `dotnet run`. `dotnet run` from the repository root does not
-work: it can only start a project, not a solution.
 
 Open **http://localhost:5080**. The API host also serves the Blazor WebAssembly client, so this one command
 starts everything. (In Visual Studio / Rider, set `StockReplenishment.Api` as the startup project.)
@@ -57,6 +56,7 @@ document is at `/openapi/v1.json`. Both are available in Development, which is w
 | `StockReplenishment.Api` | ASP.NET Core controllers, domain model, EF Core, background stock check worker, SignalR hub; hosts the client |
 | `StockReplenishment.Client` | Blazor WebAssembly + MudBlazor UI, talking to the API over HTTP only |
 | `StockReplenishment.Api.Tests` | NUnit + NSubstitute: domain, service, background processor, persistence and HTTP integration tests |
+| `StockReplenishment.csproj`(root) | Launcher only: forwards `dotnet run`in the root folder to `StockReplenishment.Api`. Compiles nothing; `dotnet build` and `dotnet test` still use the solution |
 
 Inside the API project:
 

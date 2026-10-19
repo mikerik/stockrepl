@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Launcher only, so that "dotnet run" works from the repository root.
+    It compiles nothing itself; running it starts the real application project.
+  -->
+  <PropertyGroup>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <IsPackable>false</IsPackable>
+    <RunCommand>dotnet</RunCommand>
+    <RunArguments>run --project "$(MSBuildThisFileDirectory)src/StockReplenishment.Api/StockReplenishment.Api.csproj"</RunArguments>
+  </PropertyGroup>
+
+</Project>
